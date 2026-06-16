@@ -25,7 +25,7 @@ type testSearch struct {
 	addr netip.Addr
 }
 
-func TestStorage_ByAddr(t *testing.T) {
+func TestDefaultStorage_ByAddr(t *testing.T) {
 	t.Parallel()
 
 	cli1Addr1 := netip.MustParseAddr("192.0.2.0")
@@ -42,29 +42,13 @@ func TestStorage_ByAddr(t *testing.T) {
 	cli1 := client.NewStaticClient(&proxy.CustomUpstreamConfig{})
 	cli2 := client.NewStaticClient(&proxy.CustomUpstreamConfig{})
 
-	conf := &client.DefaultStorageConfig{
-		Logger: testLogger,
-		Clock:  timeutil.SystemClock{},
-		Static: map[netip.Prefix]*client.StaticClient{
-			cli1Pref1: cli1,
-			cli1Pref2: cli1,
-			cli2Pref1: cli2,
-		},
-	}
-
-	cs := client.NewDefaultStorage(conf)
-
-	testutil.CleanupAndRequireSuccess(t, func() (err error) {
-		ctx := testutil.ContextWithTimeout(t, testTimeout)
-
-		return cs.Shutdown(ctx)
-	})
-
 	testCases := []struct {
+		static   map[netip.Prefix]*client.StaticClient
 		name     string
 		searches []testSearch
 	}{{
-		name: "empty",
+		name:   "empty",
+		static: nil,
 		searches: []testSearch{{
 			addr: absentAddr,
 			want: nil,
@@ -74,6 +58,10 @@ func TestStorage_ByAddr(t *testing.T) {
 		}},
 	}, {
 		name: "single",
+		static: map[netip.Prefix]*client.StaticClient{
+			cli1Pref1: cli1,
+			cli1Pref2: cli1,
+		},
 		searches: []testSearch{{
 			addr: cli1Addr1,
 			want: cli1,
@@ -89,6 +77,11 @@ func TestStorage_ByAddr(t *testing.T) {
 		}},
 	}, {
 		name: "multiple",
+		static: map[netip.Prefix]*client.StaticClient{
+			cli1Pref1: cli1,
+			cli1Pref2: cli1,
+			cli2Pref1: cli2,
+		},
 		searches: []testSearch{{
 			addr: cli1Addr1,
 			want: cli1,
@@ -107,6 +100,19 @@ func TestStorage_ByAddr(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			conf := &client.DefaultStorageConfig{
+				Logger: testLogger,
+				Clock:  timeutil.SystemClock{},
+				Static: tc.static,
+			}
+
+			cs := client.NewDefaultStorage(conf)
+			testutil.CleanupAndRequireSuccess(t, func() (err error) {
+				ctx := testutil.ContextWithTimeout(t, testTimeout)
+
+				return cs.Shutdown(ctx)
+			})
 
 			runSearchesTests(t, cs, tc.searches)
 		})

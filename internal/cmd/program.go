@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/dnssvc"
@@ -56,7 +57,13 @@ func (prog *program) Start(_ osservice.Service) (err error) {
 
 	svcHdlr := newServiceHandler(prog.done, service.SignalHandlerShutdownTimeout)
 
-	dnsSvc, err := dnssvc.New(prog.conf.DNS.toInternal(prog.logger))
+	dnsConf, err := prog.buildDNSConfig(l, svcHdlr)
+	if err != nil {
+		// Don't wrap the error, because it is informative enough as is.
+		return err
+	}
+
+	dnsSvc, err := dnssvc.New(dnsConf)
 	if err != nil {
 		return fmt.Errorf("creating dns service: %w", err)
 	}
@@ -67,6 +74,7 @@ func (prog *program) Start(_ osservice.Service) (err error) {
 	}
 
 	svcHdlr.add(dnsSvc)
+
 	l.DebugContext(ctx, "dns service started")
 
 	svcHdlrLog := prog.logger.With(slogutil.KeyPrefix, "service_handler")
@@ -74,6 +82,38 @@ func (prog *program) Start(_ osservice.Service) (err error) {
 	go svcHdlr.handle(ctx, svcHdlrLog, prog.errCh)
 
 	return nil
+}
+
+// buildDNSConfig builds a new DNS configuration.  l and svcHdlr must not be
+// nil.
+func (prog *program) buildDNSConfig(
+	l *slog.Logger,
+	svcHdlr *serviceHandler,
+) (conf *dnssvc.Config, err error) {
+	boot, closers, err := newResolvers(prog.conf.DNS.Bootstrap, l)
+	if err != nil {
+		return nil, fmt.Errorf("creating resolvers: %w", err)
+	}
+
+	svcHdlr.add(closers)
+
+	ups, privateUps, err := newUpstreams(prog.conf.DNS.Upstream, l, boot)
+	if err != nil {
+		return nil, fmt.Errorf("creating upstreams: %w", err)
+	}
+
+	// Use the upstream configuration with no client specification as the
+	// general one.  Also remove it from the map, to build the clients list.
+	generalUps := ups[netip.Prefix{}]
+	delete(ups, netip.Prefix{})
+
+	cs := newClientStorage(prog.logger, ups, prog.conf.DNS.Cache)
+
+	svcHdlr.add(cs)
+
+	dnsConf := prog.conf.DNS.toInternal(prog.logger, cs, generalUps, privateUps, boot)
+
+	return dnsConf, nil
 }
 
 // Stop implements the [osservice.Interface] interface for [*program].

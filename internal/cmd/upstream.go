@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/netip"
 	"slices"
@@ -9,11 +10,16 @@ import (
 	"time"
 
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/agdc"
+	"github.com/AdguardTeam/AdGuardDNSCLI/internal/agdcslog"
+	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/dnssvc"
+	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/AdguardTeam/golibs/validate"
+	"github.com/miekg/dns"
 )
 
 // upstreamConfig is the configuration for the DNS upstream servers.
@@ -23,31 +29,6 @@ type upstreamConfig struct {
 
 	// Timeout constrains the time for sending requests and receiving responses.
 	Timeout timeutil.Duration `yaml:"timeout"`
-}
-
-// toInternal converts the configuration to a *dnssvc.UpstreamConfig.  c must be
-// valid.
-func (c *upstreamConfig) toInternal() (conf *dnssvc.UpstreamConfig) {
-	conf = &dnssvc.UpstreamConfig{
-		Timeout: time.Duration(c.Timeout),
-	}
-
-	for name, g := range c.Groups {
-		grpConf := &dnssvc.UpstreamGroupConfig{
-			Name:    name,
-			Address: g.Address,
-		}
-		for _, m := range g.Match {
-			grpConf.Match = append(grpConf.Match, dnssvc.MatchCriteria{
-				Client:         m.Client.Prefix,
-				QuestionDomain: m.QuestionDomain,
-			})
-		}
-
-		conf.Groups = append(conf.Groups, grpConf)
-	}
-
-	return conf
 }
 
 // type check
@@ -256,5 +237,132 @@ func (c *upstreamMatchConfig) toIndexedMatch() (im indexedMatch) {
 	return indexedMatch{
 		domain: strings.ToLower(c.QuestionDomain),
 		client: c.Client.Prefix,
+	}
+}
+
+// upstreamConfigs is a set of client-specific upstream configurations.
+type upstreamConfigs map[netip.Prefix]*proxy.UpstreamConfig
+
+// initStaticClients creates a list of clients from confs.  cacheConf must not
+// be nil.
+func (confs upstreamConfigs) initStaticClients(
+	cacheConf *dnssvc.CacheConfig,
+) (clients map[netip.Prefix]*client.StaticClient) {
+	clients = make(map[netip.Prefix]*client.StaticClient, len(confs))
+
+	for cli, conf := range confs {
+		cliConf := proxy.NewCustomUpstreamConfig(
+			conf,
+			cacheConf.Enabled,
+			cacheConf.ClientSize,
+			false,
+		)
+
+		clients[cli] = client.NewStaticClient(cliConf)
+	}
+
+	return clients
+}
+
+// newUpstreams builds the general upstream configuration, client-specific ones,
+// and the private one, if any, from conf.  boot bootstraps the upstreams'
+// domain names.  conf and l must not be nil.
+func newUpstreams(
+	conf *upstreamConfig,
+	l *slog.Logger,
+	boot upstream.Resolver,
+) (ups upstreamConfigs, private *proxy.UpstreamConfig, err error) {
+	defer func() { err = errors.Annotate(err, "creating upstreams: %w") }()
+
+	ups = upstreamConfigs{
+		// Init default group.
+		netip.Prefix{}: &proxy.UpstreamConfig{},
+	}
+	upstreams := map[string]upstream.Upstream{}
+
+	var errs []error
+	for name, g := range conf.Groups {
+		opts := &upstream.Options{
+			Logger: l.With(
+				agdcslog.KeyUpstreamType, agdcslog.UpstreamTypeMain,
+				agdcslog.KeyUpstreamGroup, name,
+			),
+			Timeout:   time.Duration(conf.Timeout),
+			Bootstrap: boot,
+		}
+
+		var u upstream.Upstream
+		u, err = newUpstreamOrCached(g.Address, upstreams, opts)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("group %q: %w", name, err))
+
+			continue
+		}
+
+		switch name {
+		case agdc.UpstreamGroupNameDefault:
+			ups[netip.Prefix{}].Upstreams = append(ups[netip.Prefix{}].Upstreams, u)
+		case agdc.UpstreamGroupNamePrivate:
+			if private == nil {
+				private = &proxy.UpstreamConfig{}
+			}
+			private.Upstreams = append(private.Upstreams, u)
+		default:
+			g.addGroup(ups, u)
+		}
+	}
+
+	return ups, private, errors.Join(errs...)
+}
+
+// newUpstreamOrCached creates a new upstream or returns the cached one from
+// addrToUps.
+func newUpstreamOrCached(
+	addr string,
+	addrToUps map[string]upstream.Upstream,
+	opts *upstream.Options,
+) (u upstream.Upstream, err error) {
+	u, ok := addrToUps[addr]
+	if !ok {
+		u, err = upstream.AddressToUpstream(addr, opts)
+		if err != nil {
+			// Don't wrap the error, because it's informative enough as is.
+			return nil, err
+		}
+
+		addrToUps[addr] = u
+	}
+
+	return u, nil
+}
+
+// addGroup adds u to the configuration of the corresponding client.
+func (c *upstreamGroupConfig) addGroup(configs upstreamConfigs, u upstream.Upstream) {
+	for _, m := range c.Match {
+		cl := m.Client.Prefix
+
+		conf := configs[cl]
+		if conf == nil {
+			conf = &proxy.UpstreamConfig{}
+			configs[cl] = conf
+		}
+
+		domain := m.QuestionDomain
+		if domain == "" {
+			conf.Upstreams = append(conf.Upstreams, u)
+
+			continue
+		}
+
+		if conf.DomainReservedUpstreams == nil {
+			conf.DomainReservedUpstreams = map[string][]upstream.Upstream{}
+		}
+		if conf.SpecifiedDomainUpstreams == nil {
+			conf.SpecifiedDomainUpstreams = map[string][]upstream.Upstream{}
+		}
+
+		domain = dns.Fqdn(strings.ToLower(domain))
+		conf.DomainReservedUpstreams[domain] = append(conf.DomainReservedUpstreams[domain], u)
+		conf.SpecifiedDomainUpstreams[domain] = append(conf.SpecifiedDomainUpstreams[domain], u)
 	}
 }

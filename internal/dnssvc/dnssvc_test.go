@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AdguardTeam/AdGuardDNSCLI/internal/agdc"
+	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/dnssvc"
 	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/testutil"
@@ -22,6 +23,9 @@ import (
 //
 // TODO(e.burkov):  Move into agdctest.
 const testTimeout = 1 * time.Second
+
+// testLogger is a discard logger for tests.
+var testLogger = slogutil.NewDiscardLogger()
 
 // startLocalhostUpstream is a test helper that starts a DNS server on
 // localhost.
@@ -79,6 +83,7 @@ func (cg *testClientGetter) Address(dctx *proxy.DNSContext) (addr netip.AddrPort
 }
 
 // TODO(e.burkov):  Add bootstrap.
+// TODO(m.kazantsev):  Improve maintainability.
 func TestDNSService(t *testing.T) {
 	t.Parallel()
 
@@ -153,7 +158,6 @@ func TestDNSService(t *testing.T) {
 
 	cli1Addr := netip.MustParseAddr("1.2.3.4")
 	cli2Addr := netip.MustParseAddr("4.3.2.1")
-	cli2Pref := netip.PrefixFrom(cli2Addr, cli2Addr.BitLen())
 
 	privateCli := netip.MustParseAddr("192.168.1.2")
 	require.True(t, privateNets.Contains(privateCli))
@@ -178,47 +182,34 @@ func TestDNSService(t *testing.T) {
 		},
 	}
 
+	upsOpts := &upstream.Options{
+		Logger: testLogger,
+	}
+
 	// Create and start the service.
 
 	// TODO(e.burkov):  Add a helper constructor with default values as the test
 	// suite grows.
 	svc, err := dnssvc.New(&dnssvc.Config{
-		BaseLogger:     slogutil.NewDiscardLogger(),
-		Logger:         slogutil.NewDiscardLogger(),
+		BaseLogger:     testLogger,
+		Logger:         testLogger,
 		PrivateSubnets: privateNets,
-		Bootstrap:      &dnssvc.BootstrapConfig{},
+		GeneralUpstreams: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{
+				newTestUpstream(t, subdomainURL, upsOpts),
+				newTestUpstream(t, cliSpecURL, upsOpts),
+				newTestUpstream(t, subdomainCliSpecURL, upsOpts),
+			},
+		},
+		PrivateRDNSUpstreams: &proxy.UpstreamConfig{
+			Upstreams: []upstream.Upstream{
+				newTestUpstream(t, privateURL, upsOpts),
+			},
+		},
 		Cache: &dnssvc.CacheConfig{
 			Enabled: false,
 		},
-		Upstreams: &dnssvc.UpstreamConfig{
-			Groups: []*dnssvc.UpstreamGroupConfig{{
-				Name:    agdc.UpstreamGroupNameDefault,
-				Address: commonURL,
-			}, {
-				Name:    agdc.UpstreamGroupNamePrivate,
-				Address: privateURL,
-			}, {
-				Name:    "domain-group",
-				Address: subdomainURL,
-				Match: []dnssvc.MatchCriteria{{
-					QuestionDomain: testSubdomain,
-				}},
-			}, {
-				Name:    "client-group",
-				Address: cliSpecURL,
-				Match: []dnssvc.MatchCriteria{{
-					Client: cli2Pref,
-				}},
-			}, {
-				Name:    "domain-client-group",
-				Address: subdomainCliSpecURL,
-				Match: []dnssvc.MatchCriteria{{
-					Client:         cli2Pref,
-					QuestionDomain: testSubdomain,
-				}},
-			}},
-			Timeout: testTimeout,
-		},
+		ClientStorage: client.EmptyStorage{},
 		Fallbacks: &dnssvc.FallbackConfig{
 			Addresses: []string{
 				commonURL,
@@ -291,4 +282,14 @@ func TestDNSService(t *testing.T) {
 			assert.Equal(t, tc.wantResp, received)
 		})
 	}
+}
+
+// newTestUpstream creates a new test upstream.
+func newTestUpstream(tb testing.TB, addr string, opts *upstream.Options) (u upstream.Upstream) {
+	tb.Helper()
+
+	u, err := upstream.AddressToUpstream(addr, opts)
+	require.NoError(tb, err)
+
+	return u
 }

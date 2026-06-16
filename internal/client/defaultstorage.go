@@ -28,8 +28,6 @@ type DefaultStorageConfig struct {
 }
 
 // DefaultStorage is a default implementation of the [Storage] interface.
-//
-// TODO(m.kazantsev):  Use.
 type DefaultStorage struct {
 	clock  timeutil.Clock
 	logger *slog.Logger
@@ -70,13 +68,15 @@ func (d *DefaultStorage) ByAddr(ctx context.Context, addr netip.Addr) (c Client,
 	defer d.mu.Unlock()
 
 	for _, cli := range d.clients {
-		if cli.prefix.Contains(addr) {
-			if cli.isValid(d.clock.Now()) {
-				return cli.client, true
-			}
-
-			return nil, false
+		if !cli.prefix.Contains(addr) {
+			continue
 		}
+
+		if cli.isValid(d.clock.Now()) {
+			return cli.client, true
+		}
+
+		return nil, false
 	}
 
 	return nil, false

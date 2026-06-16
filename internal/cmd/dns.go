@@ -4,7 +4,10 @@ import (
 	"log/slog"
 	"net/netip"
 
+	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/dnssvc"
+	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/container"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
@@ -65,26 +68,34 @@ func (c *dnsConfig) Validate() (err error) {
 }
 
 // toInternal converts the DNS configuration to the internal representation.  c
-// must be valid.
-func (c *dnsConfig) toInternal(logger *slog.Logger) (conf *dnssvc.Config) {
+// must be valid.  baseLogger, clientStorage and general must not be nil.
+func (c *dnsConfig) toInternal(
+	baseLogger *slog.Logger,
+	clientStorage client.Storage,
+	general *proxy.UpstreamConfig,
+	private *proxy.UpstreamConfig,
+	boot upstream.Resolver,
+) (conf *dnssvc.Config) {
 	listenAddrs := make([]netip.AddrPort, 0, len(c.Server.ListenAddresses))
 	for _, s := range c.Server.ListenAddresses {
 		listenAddrs = append(listenAddrs, s.Address)
 	}
 
 	return &dnssvc.Config{
-		BaseLogger: logger,
-		Logger:     logger.With(slogutil.KeyPrefix, "dnssvc"),
+		BaseLogger:       baseLogger,
+		ClientStorage:    clientStorage,
+		GeneralUpstreams: general,
+		Logger:           baseLogger.With(slogutil.KeyPrefix, "dnssvc"),
 		// TODO(e.burkov):  Consider making configurable.
-		PrivateSubnets:  netutil.SubnetSetFunc(netutil.IsLocallyServed),
-		Cache:           c.Cache.toInternal(),
-		Bootstrap:       c.Bootstrap.toInternal(),
-		Upstreams:       c.Upstream.toInternal(),
-		Fallbacks:       c.Fallback.toInternal(),
-		ClientGetter:    dnssvc.DefaultClientGetter{},
-		ListenAddrs:     listenAddrs,
-		BindRetry:       c.Server.BindRetry.toInternal(),
-		PendingRequests: c.Server.PendingRequests.toInternal(),
+		PrivateSubnets:       netutil.SubnetSetFunc(netutil.IsLocallyServed),
+		PrivateRDNSUpstreams: private,
+		Bootstrap:            boot,
+		Cache:                c.Cache.toInternal(),
+		Fallbacks:            c.Fallback.toInternal(),
+		ClientGetter:         dnssvc.DefaultClientGetter{},
+		ListenAddrs:          listenAddrs,
+		BindRetry:            c.Server.BindRetry.toInternal(),
+		PendingRequests:      c.Server.PendingRequests.toInternal(),
 	}
 }
 

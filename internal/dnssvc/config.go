@@ -5,6 +5,9 @@ import (
 	"net/netip"
 	"time"
 
+	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
+	"github.com/AdguardTeam/dnsproxy/proxy"
+	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/netutil"
 )
 
@@ -23,17 +26,30 @@ type Config struct {
 	// of the networks.  It must not be nil.
 	PrivateSubnets netutil.SubnetSet
 
+	// ClientStorage stores clients according to their addresses.  It must not
+	// be nil.  Storage must not be shut down until the [DNSService.Shutdown]
+	// returns.
+	ClientStorage client.Storage
+
+	// Bootstrap is a bootstrap resolver.  If it is nil, than
+	// [net.DefaultResolver] will be used.
+	Bootstrap upstream.Resolver
+
+	// GeneralUpstreams represents the general upstreams.  It must be valid.
+	GeneralUpstreams *proxy.UpstreamConfig
+
+	// PrivateRDNSUpstreams represents the private upstreams.  If it is nil, the
+	// usage of private RDNS will be disabled.
+	PrivateRDNSUpstreams *proxy.UpstreamConfig
+
 	// Cache is the configuration for the DNS results cache.  It must not be
 	// nil.
 	Cache *CacheConfig
 
-	// Bootstrap describes bootstrapping DNS servers.  It must not be nil.
-	Bootstrap *BootstrapConfig
-
-	// Upstreams describes DNS upstream servers.  It must not be nil.
-	Upstreams *UpstreamConfig
-
 	// Fallbacks describes DNS fallback upstream servers.  It must not be nil.
+	//
+	// TODO(m.kazantsev): Move out of there to be able to remove the bootstraps
+	// as well.
 	Fallbacks *FallbackConfig
 
 	// ClientGetter is the function to get the client for a request.  It must
