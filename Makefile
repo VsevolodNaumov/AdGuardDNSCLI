@@ -85,10 +85,12 @@ init: ; git config core.hooksPath ./scripts/hooks
 .PHONY: test
 test: go-test
 
-.PHONY: go-build go-deps go-env go-lint go-test go-upd-tools
+.PHONY: go-bench go-build go-deps go-env go-fuzz go-lint go-test go-upd-tools
+go-bench:     ; $(ENV)          "$(SHELL)" ./scripts/make/go-bench.sh
 go-build:     ; $(ENV)          "$(SHELL)" ./scripts/make/go-build.sh
 go-deps:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-deps.sh
 go-env:       ; $(ENV)          "$(GO.MACRO)" env
+go-fuzz:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-fuzz.sh
 go-lint:      ; $(ENV)          "$(SHELL)" ./scripts/make/go-lint.sh
 go-test:      ; $(ENV) RACE='1' "$(SHELL)" ./scripts/make/go-test.sh
 go-upd-tools: ; $(ENV)          "$(SHELL)" ./scripts/make/go-upd-tools.sh

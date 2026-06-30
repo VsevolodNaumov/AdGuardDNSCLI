@@ -85,8 +85,6 @@ func TestDefaultHumanIDSource_Identify(t *testing.T) {
 	}
 }
 
-// TODO(m.kazantsev):  Add other implementations of [client.HumanIDSource] when
-// they will be added.
 func TestConsequentIDSource_Identify(t *testing.T) {
 	t.Parallel()
 

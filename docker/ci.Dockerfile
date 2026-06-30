@@ -135,6 +135,14 @@ readonly exit_code
 
 kill "$syslogd_pid"
 
+make \
+	BRANCH='master' \
+	REVISION='0000000000000000000000000000000000000000' \
+	VERBOSE=1 \
+	go-fuzz \
+	go-bench \
+	;
+
 exit "$exit_code"
 EOF
 
