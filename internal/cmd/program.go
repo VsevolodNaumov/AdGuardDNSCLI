@@ -57,7 +57,7 @@ func (prog *program) Start(_ osservice.Service) (err error) {
 
 	svcHdlr := newServiceHandler(prog.done, service.SignalHandlerShutdownTimeout)
 
-	dnsConf, err := prog.buildDNSConfig(l, svcHdlr)
+	dnsConf, err := prog.buildDNSConfig(ctx, l, svcHdlr)
 	if err != nil {
 		// Don't wrap the error, because it is informative enough as is.
 		return err
@@ -87,6 +87,7 @@ func (prog *program) Start(_ osservice.Service) (err error) {
 // buildDNSConfig builds a new DNS configuration.  l and svcHdlr must not be
 // nil.
 func (prog *program) buildDNSConfig(
+	ctx context.Context,
 	l *slog.Logger,
 	svcHdlr *serviceHandler,
 ) (conf *dnssvc.Config, err error) {
@@ -107,9 +108,10 @@ func (prog *program) buildDNSConfig(
 	generalUps := ups[netip.Prefix{}]
 	delete(ups, netip.Prefix{})
 
-	cs := newClientStorage(prog.logger, ups, prog.conf.DNS.Cache)
-
-	svcHdlr.add(cs)
+	cs, err := initClientStorage(ctx, prog.logger, ups, prog.conf.DNS.Cache, svcHdlr)
+	if err != nil {
+		return nil, fmt.Errorf("initializing client storage: %w", err)
+	}
 
 	dnsConf := prog.conf.DNS.toInternal(prog.logger, cs, generalUps, privateUps, boot)
 

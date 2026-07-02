@@ -9,11 +9,6 @@ type CacheConfig struct {
 	//
 	// TODO(e.burkov):  Make it a [datasize.ByteSize] when dnsproxy uses it.
 	Size int
-
-	// ClientSize is the maximum size of each per-client cache.
-	//
-	// TODO(e.burkov):  Make it a [datasize.ByteSize] when dnsproxy uses it.
-	ClientSize int
 }
 
 // TODO(e.burkov):  Add tests.

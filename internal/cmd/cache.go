@@ -28,8 +28,6 @@ func (c *cacheConfig) toInternal() (conf *dnssvc.CacheConfig) {
 		Enabled: c.Enabled,
 		// #nosec G115 -- The value is validated to not exceed [math.MaxInt].
 		Size: int(c.Size),
-		// #nosec G115 -- The value is validated to not exceed [math.MaxInt].
-		ClientSize: int(c.ClientSize),
 	}
 }
 

@@ -1,27 +1,51 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 )
 
-// newClientStorage creates a new implementation of the [client.Storage]
-// interface.  All arguments must not be nil.
-func newClientStorage(
+// defaultClientCleanupIvl is the default interval to run the client storage
+// cleanup.
+//
+// TODO(e.burkov):  Make configurable.
+const defaultClientCleanupIvl = 5 * time.Minute
+
+// initClientStorage creates and starts a [client.Storage].  All arguments must
+// not be nil.
+func initClientStorage(
+	ctx context.Context,
 	baseLogger *slog.Logger,
 	ups upstreamConfigs,
 	cacheConf *cacheConfig,
-) (s client.Storage) {
-	conf := cacheConf.toInternal()
-
+	svcHdlr *serviceHandler,
+) (s client.Storage, err error) {
 	clientStrgConf := &client.DefaultStorageConfig{
-		Logger: baseLogger.With(slogutil.KeyPrefix, "client_storage"),
-		Clock:  timeutil.SystemClock{},
-		Static: ups.initStaticClients(conf),
+		Logger:              baseLogger.With(slogutil.KeyPrefix, "client_storage"),
+		Clock:               timeutil.SystemClock{},
+		Static:              ups.initStaticClients(cacheConf),
+		HumanIDSource:       client.EmptyHumanIDSource{},
+		UpstreamConstructor: client.DefaultUpstreamConstructor{},
+		CleanupIvl:          defaultClientCleanupIvl,
+		// #nosec G115 -- The value is validated to not exceed [math.MaxInt].
+		CacheSize:    int(cacheConf.ClientSize),
+		CacheEnabled: cacheConf.Enabled,
 	}
 
-	return client.NewDefaultStorage(clientStrgConf)
+	cs := client.NewDefaultStorage(clientStrgConf)
+
+	err = cs.Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("starting client storage: %w", err)
+	}
+
+	svcHdlr.add(cs)
+
+	return cs, nil
 }

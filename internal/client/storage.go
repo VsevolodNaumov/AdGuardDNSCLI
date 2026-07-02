@@ -15,6 +15,8 @@ type Storage interface {
 
 	// Shutdowner is used to release resources used by the storage.  Storage and
 	// its clients must not be used after Shutdown.
+	//
+	// TODO(e.burkov):  Consider using [service.Interface].
 	service.Shutdowner
 }
 

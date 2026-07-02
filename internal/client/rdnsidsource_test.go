@@ -29,7 +29,7 @@ func TestRDNSIDSource_Identify(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	clock := newTestClock(t, now)
+	clock, _ := newTestClock(t, &now)
 
 	reverseIPv4, reverseErr := dns.ReverseAddr(testIPv4.String())
 	require.NoError(t, reverseErr)
@@ -110,7 +110,7 @@ func TestRDNSIDSource_Identify_errors(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	clock := newTestClock(t, now)
+	clock, _ := newTestClock(t, &now)
 
 	codeRefused := uint16(dns.RcodeRefused)
 
@@ -158,7 +158,7 @@ func TestRDNSIDSource_Identify_duplicates(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	clock := newTestClock(t, now)
+	clock, _ := newTestClock(t, &now)
 
 	reverseIPv4, reverseErr := dns.ReverseAddr(testIPv4.String())
 	require.NoError(t, reverseErr)

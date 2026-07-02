@@ -9,31 +9,16 @@ import (
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/testutil/faketime"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// Test constants.
-const (
-	// testValidUntilIvl is a test interval of a valid time.
-	testValidUntilIvl = 1 * time.Hour
-
-	// testIPv4HumanID is a test [client.HumanID].
-	//
-	// Note: Keep in sync with testIPv4.
-	testIPv4HumanID = client.HumanID("dev-192-0-2-1")
-)
-
-// testIPv4 is a test IPv4 address.
-var testIPv4 = netip.AddrFrom4([4]byte{192, 0, 2, 1})
-
 func TestDefaultHumanIDSource_Identify(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now()
-	clock := newTestClock(t, now)
+	clock, _ := newTestClock(t, &now)
 
 	testIPv4MappedIPv6 := netip.AddrFrom16(testIPv4.As16())
 	testIPv6 := netip.MustParseAddr("2001:db8::1")
@@ -95,8 +80,9 @@ func TestConsequentIDSource_Identify(t *testing.T) {
 		Until: now.Add(testValidUntilIvl),
 	}
 
+	clock, _ := newTestClock(t, &now)
 	srcConf := &client.DefaultHumanIDSourceConfig{
-		Clock:       newTestClock(t, now),
+		Clock:       clock,
 		ValidityIvl: timeutil.Duration(testValidUntilIvl),
 	}
 
@@ -141,16 +127,5 @@ func TestConsequentIDSource_Identify(t *testing.T) {
 
 			assert.Equal(t, tc.wantID, id)
 		})
-	}
-}
-
-// newTestClock returns a fake clock for tests.
-func newTestClock(tb testing.TB, now time.Time) (c timeutil.Clock) {
-	tb.Helper()
-
-	return &faketime.Clock{
-		OnNow: func() (res time.Time) {
-			return now
-		},
 	}
 }

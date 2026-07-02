@@ -12,7 +12,6 @@ import (
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/agdc"
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/agdcslog"
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
-	"github.com/AdguardTeam/AdGuardDNSCLI/internal/dnssvc"
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
 	"github.com/AdguardTeam/golibs/errors"
@@ -246,15 +245,17 @@ type upstreamConfigs map[netip.Prefix]*proxy.UpstreamConfig
 // initStaticClients creates a list of clients from confs.  cacheConf must not
 // be nil.
 func (confs upstreamConfigs) initStaticClients(
-	cacheConf *dnssvc.CacheConfig,
+	c *cacheConfig,
 ) (clients map[netip.Prefix]*client.StaticClient) {
 	clients = make(map[netip.Prefix]*client.StaticClient, len(confs))
 
 	for cli, conf := range confs {
 		cliConf := proxy.NewCustomUpstreamConfig(
 			conf,
-			cacheConf.Enabled,
-			cacheConf.ClientSize,
+			c.Enabled,
+			// #nosec G115 -- The value is validated to not exceed
+			// [math.MaxInt].
+			int(c.ClientSize),
 			false,
 		)
 
