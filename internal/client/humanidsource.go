@@ -121,3 +121,10 @@ func (c ConsequentHumanIDSource) Identify(
 
 	return nil, errors.ErrNoValue
 }
+
+// IsIdentifiable returns true if the given address is either a private
+// non-loopback address or a global unicast address.  Note, that it may be used
+// as [netutil.SubnetSetFunc].
+func IsIdentifiable(addr netip.Addr) (ok bool) {
+	return (addr.IsPrivate() && !addr.IsLoopback()) || addr.IsGlobalUnicast()
+}

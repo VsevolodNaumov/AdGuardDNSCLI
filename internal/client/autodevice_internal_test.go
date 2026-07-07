@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TODO(e.burkov):  Test with domains.
 func TestAutodeviceConfig_Compare(t *testing.T) {
 	t.Parallel()
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 )
 
@@ -32,7 +33,9 @@ func initClientStorage(
 		Static:              ups.initStaticClients(cacheConf),
 		HumanIDSource:       client.EmptyHumanIDSource{},
 		UpstreamConstructor: client.DefaultUpstreamConstructor{},
-		CleanupIvl:          defaultClientCleanupIvl,
+		// TODO(e.burkov):  Consider making configurable.
+		Identifiable: netutil.SubnetSetFunc(client.IsIdentifiable),
+		CleanupIvl:   defaultClientCleanupIvl,
 		// #nosec G115 -- The value is validated to not exceed [math.MaxInt].
 		CacheSize:    int(cacheConf.ClientSize),
 		CacheEnabled: cacheConf.Enabled,

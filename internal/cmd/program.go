@@ -105,8 +105,9 @@ func (prog *program) buildDNSConfig(
 
 	// Use the upstream configuration with no client specification as the
 	// general one.  Also remove it from the map, to build the clients list.
-	generalUps := ups[netip.Prefix{}]
-	delete(ups, netip.Prefix{})
+	generalUpsConfs := ups[netip.Prefix{}]
+	generalUps := generalUpsConfs[""]
+	delete(generalUpsConfs, "")
 
 	cs, err := initClientStorage(ctx, prog.logger, ups, prog.conf.DNS.Cache, svcHdlr)
 	if err != nil {

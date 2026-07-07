@@ -2,10 +2,8 @@ package client
 
 import (
 	"fmt"
-	"maps"
 	"net/netip"
 	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
@@ -13,7 +11,6 @@ import (
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/netutil/urlutil"
-	"github.com/miekg/dns"
 )
 
 // Constants for valid encrypted DNS upstream schemes.
@@ -66,7 +63,6 @@ func (c *AutodeviceUpstreamConfig) upstreamURL(id HumanID) (u *url.URL, err erro
 	case SchemeHTTPS:
 		return u.JoinPath(extID), nil
 	case SchemeQUIC, SchemeTLS:
-
 		tmpl := netutil.CloneURL(u)
 		tmpl.Host = extID + "." + tmpl.Host
 
@@ -81,62 +77,54 @@ func (c *AutodeviceUpstreamConfig) upstreamURL(id HumanID) (u *url.URL, err erro
 // values must be valid.
 type AutodeviceClientConfig map[string]*AutodeviceUpstreamConfig
 
-// toUpstreamConfig converts the AutodeviceClientConfig into a
-// proxy.UpstreamConfig.  hid must be valid.
-func (conf AutodeviceClientConfig) toUpstreamConfig(
+// toUpstreamConfig converts the *AutodeviceUpstreamConfig into a
+// *proxy.UpstreamConfig.  hid must be valid.
+func (c *AutodeviceUpstreamConfig) toUpstreamConfig(
 	hid HumanID,
 	upsCons UpstreamConstructor,
 ) (uc *proxy.UpstreamConfig, err error) {
-	uc = &proxy.UpstreamConfig{}
 	defer func() {
-		if err != nil {
-			err = fmt.Errorf("client with human id %q: %w", hid, err)
-			uc, err = nil, errors.WithDeferred(err, uc.Close())
-		}
+		err = errors.Annotate(err, "client with human id %q: %w", hid)
 	}()
 
-	known := map[string]upstream.Upstream{}
-
-	for _, domain := range slices.Sorted(maps.Keys(conf)) {
-		domainConf := conf[domain]
-
-		var upsURL *url.URL
-		upsURL, err = domainConf.upstreamURL(hid)
-		if err != nil {
-			return uc, fmt.Errorf("building upstream address for domain %q: %w", domain, err)
-		}
-
-		var u upstream.Upstream
-		u, err = newUpstreamOrCached(upsURL.String(), domainConf.Options, upsCons, known)
-		if err != nil {
-			return uc, fmt.Errorf("creating upstream for domain %q: %w", domain, err)
-		}
-
-		addUpstream(uc, domain, u)
+	upsURL, err := c.upstreamURL(hid)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return nil, err
 	}
 
-	return uc, nil
+	u, err := upsCons.AddressToUpstream(upsURL.String(), c.Options)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return nil, err
+	}
+
+	return &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{u},
+	}, nil
 }
 
 // autodeviceClient is a dynamic client configuration matched by subnet.
 type autodeviceClient struct {
-	conf *proxy.CustomUpstreamConfig
+	upstreams *proxy.CustomUpstreamConfig
 }
 
 // newAutodeviceClient creates a new autodevice client with hid and c.  hid must
 // be valid, c must not be nil.
 func newAutodeviceClient(
 	hid HumanID,
-	c *autodeviceConfig,
+	c *AutodeviceUpstreamConfig,
 	upsCons UpstreamConstructor,
+	cacheEnabled bool,
+	cacheSize int,
 ) (cli *autodeviceClient, err error) {
-	upsConf, err := c.conf.toUpstreamConfig(hid, upsCons)
+	upsConf, err := c.toUpstreamConfig(hid, upsCons)
 	if err != nil {
 		return nil, fmt.Errorf("creating upstream configuration for autodevice client: %w", err)
 	}
 
 	return &autodeviceClient{
-		conf: proxy.NewCustomUpstreamConfig(upsConf, c.cacheEnabled, c.cacheSize, false),
+		upstreams: proxy.NewCustomUpstreamConfig(upsConf, cacheEnabled, cacheSize, false),
 	}, nil
 }
 
@@ -145,79 +133,54 @@ var _ Client = (*autodeviceClient)(nil)
 
 // Upstreams implements the [Client] interface for *autodeviceClient.
 func (c *autodeviceClient) Upstreams() (uc *proxy.CustomUpstreamConfig) {
-	return c.conf
-}
-
-// newUpstreamOrCached creates a new upstream or returns the cached one from
-// addrToUps.
-//
-// TODO(e.burkov):  DRY with version from [cmd].
-func newUpstreamOrCached(
-	addr string,
-	opts *upstream.Options,
-	upsCons UpstreamConstructor,
-	addrToUps map[string]upstream.Upstream,
-) (u upstream.Upstream, err error) {
-	u, ok := addrToUps[addr]
-	if !ok {
-		u, err = upsCons.AddressToUpstream(addr, opts)
-		if err != nil {
-			// Don't wrap the error, because it's informative enough as is.
-			return nil, err
-		}
-
-		addrToUps[addr] = u
-	}
-
-	return u, nil
-}
-
-// addUpstream adds an upstream to conf for the given domain.  If domain is
-// empty, the upstream is added to the general list of upstreams.  conf must not
-// be nil, u must be valid.  domain, if not empty, must be a valid non-FQDN
-// domain name.
-func addUpstream(conf *proxy.UpstreamConfig, domain string, u upstream.Upstream) {
-	if domain == "" {
-		conf.Upstreams = append(conf.Upstreams, u)
-
-		return
-	}
-
-	if conf.DomainReservedUpstreams == nil {
-		conf.DomainReservedUpstreams = map[string][]upstream.Upstream{}
-	}
-	if conf.SpecifiedDomainUpstreams == nil {
-		conf.SpecifiedDomainUpstreams = map[string][]upstream.Upstream{}
-	}
-
-	domain = dns.Fqdn(strings.ToLower(domain))
-	conf.DomainReservedUpstreams[domain] = append(conf.DomainReservedUpstreams[domain], u)
-	conf.SpecifiedDomainUpstreams[domain] = append(conf.SpecifiedDomainUpstreams[domain], u)
+	return c.upstreams
 }
 
 // autodeviceConfig is a complete configuration for an autodevice client under
 // specific IP subnet.
 type autodeviceConfig struct {
-	conf         AutodeviceClientConfig
+	conf         *AutodeviceUpstreamConfig
 	prefix       netip.Prefix
+	domain       string
 	cacheSize    int
 	cacheEnabled bool
 }
 
-// compare is a method for sorting autodevice configurations by prefix.  Empty
-// prefix is sorted last, so that it is only used if no other configuration
-// matches.  other must not be nil.
+// compare is a method for sorting autodevice configurations by prefix and
+// domain.  Empty prefix is sorted last, so that it is only used if no other
+// configuration matches.  other must not be nil.
 func (c *autodeviceConfig) compare(other *autodeviceConfig) (res int) {
 	switch {
 	case c.prefix == (netip.Prefix{}):
 		if other.prefix == (netip.Prefix{}) {
-			return 0
+			return compareDomains(c.domain, other.domain)
 		}
 
 		return 1
 	case other.prefix == (netip.Prefix{}):
 		return -1
 	default:
-		return c.prefix.Compare(other.prefix)
+		// Go on.
 	}
+
+	res = c.prefix.Compare(other.prefix)
+	if res == 0 {
+		return compareDomains(c.domain, other.domain)
+	}
+
+	return res
+}
+
+// matches returns true if c matches addr and domain pair.  addr must be valid,
+// domain, if not empty, must be a valid non-FQDN.
+func (c *autodeviceConfig) matches(addr netip.Addr, domain string) (ok bool) {
+	if c.prefix != (netip.Prefix{}) && !c.prefix.Contains(addr) {
+		return false
+	}
+
+	if !matchesDomain(domain, c.domain) {
+		return false
+	}
+
+	return true
 }

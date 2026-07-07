@@ -18,7 +18,6 @@ import (
 	"github.com/AdguardTeam/golibs/netutil"
 	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/AdguardTeam/golibs/validate"
-	"github.com/miekg/dns"
 )
 
 // upstreamConfig is the configuration for the DNS upstream servers.
@@ -239,27 +238,41 @@ func (c *upstreamMatchConfig) toIndexedMatch() (im indexedMatch) {
 	}
 }
 
-// upstreamConfigs is a set of client-specific upstream configurations.
-type upstreamConfigs map[netip.Prefix]*proxy.UpstreamConfig
+// upstreamConfigs is a set of client-specific upstream configurations.  Its
+// keys are client subnets, which should be either valid or empty.  Its values
+// are maps of question domains to upstream configurations.  The keys of the
+// inner maps, if not empty, should be valid non-FQDNs.  The values of the inner
+// maps must not be nil.
+type upstreamConfigs map[netip.Prefix]map[string]*proxy.UpstreamConfig
 
 // initStaticClients creates a list of clients from confs.  cacheConf must not
 // be nil.
 func (confs upstreamConfigs) initStaticClients(
 	c *cacheConfig,
-) (clients map[netip.Prefix]*client.StaticClient) {
-	clients = make(map[netip.Prefix]*client.StaticClient, len(confs))
+) (clients map[netip.Prefix]client.StaticClientConfig) {
+	clients = make(map[netip.Prefix]client.StaticClientConfig, len(confs))
 
-	for cli, conf := range confs {
-		cliConf := proxy.NewCustomUpstreamConfig(
-			conf,
-			c.Enabled,
-			// #nosec G115 -- The value is validated to not exceed
-			// [math.MaxInt].
-			int(c.ClientSize),
-			false,
-		)
+	for _, pref := range slices.SortedFunc(maps.Keys(confs), (netip.Prefix).Compare) {
+		for _, domain := range slices.Sorted(maps.Keys(confs[pref])) {
+			conf := confs[pref][domain]
 
-		clients[cli] = client.NewStaticClient(cliConf)
+			upsConf := proxy.NewCustomUpstreamConfig(
+				conf,
+				c.Enabled,
+				// #nosec G115 -- The value is validated to not exceed
+				// [math.MaxInt].
+				int(c.ClientSize),
+				false,
+			)
+
+			cliConf, ok := clients[pref]
+			if !ok {
+				cliConf = client.StaticClientConfig{}
+				clients[pref] = cliConf
+			}
+
+			cliConf[domain] = client.NewStaticClient(upsConf)
+		}
 	}
 
 	return clients
@@ -275,11 +288,7 @@ func newUpstreams(
 ) (ups upstreamConfigs, private *proxy.UpstreamConfig, err error) {
 	defer func() { err = errors.Annotate(err, "creating upstreams: %w") }()
 
-	ups = upstreamConfigs{
-		// Init default group.
-		netip.Prefix{}: &proxy.UpstreamConfig{},
-	}
-	upstreams := map[string]upstream.Upstream{}
+	ups = upstreamConfigs{}
 
 	var errs []error
 	for name, g := range conf.Groups {
@@ -292,78 +301,90 @@ func newUpstreams(
 			Bootstrap: boot,
 		}
 
-		var u upstream.Upstream
-		u, err = newUpstreamOrCached(g.Address, upstreams, opts)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("group %q: %w", name, err))
-
-			continue
-		}
-
 		switch name {
 		case agdc.UpstreamGroupNameDefault:
-			ups[netip.Prefix{}].Upstreams = append(ups[netip.Prefix{}].Upstreams, u)
+			err = addDefaultGroup(ups, g.Address, opts)
 		case agdc.UpstreamGroupNamePrivate:
 			if private == nil {
 				private = &proxy.UpstreamConfig{}
 			}
-			private.Upstreams = append(private.Upstreams, u)
+
+			err = addPrivateGroup(private, g.Address, opts)
 		default:
-			g.addGroup(ups, u)
+			err = g.addGroup(ups, opts)
+		}
+
+		if err != nil {
+			err = fmt.Errorf("group %q: %w", name, err)
+			errs = append(errs, err)
 		}
 	}
 
 	return ups, private, errors.Join(errs...)
 }
 
-// newUpstreamOrCached creates a new upstream or returns the cached one from
-// addrToUps.
-func newUpstreamOrCached(
-	addr string,
-	addrToUps map[string]upstream.Upstream,
-	opts *upstream.Options,
-) (u upstream.Upstream, err error) {
-	u, ok := addrToUps[addr]
-	if !ok {
-		u, err = upstream.AddressToUpstream(addr, opts)
-		if err != nil {
-			// Don't wrap the error, because it's informative enough as is.
-			return nil, err
-		}
-
-		addrToUps[addr] = u
+// addDefaultGroup adds u to the default group in ups.  If the default group
+// does not exist, it is created.
+func addDefaultGroup(ups upstreamConfigs, addr string, opts *upstream.Options) (err error) {
+	u, err := upstream.AddressToUpstream(addr, opts)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return err
 	}
 
-	return u, nil
+	conf := ups[netip.Prefix{}]
+	if conf == nil {
+		conf = map[string]*proxy.UpstreamConfig{}
+		ups[netip.Prefix{}] = conf
+	}
+
+	conf[""] = &proxy.UpstreamConfig{
+		Upstreams: []upstream.Upstream{u},
+	}
+
+	return nil
 }
 
-// addGroup adds u to the configuration of the corresponding client.
-func (c *upstreamGroupConfig) addGroup(configs upstreamConfigs, u upstream.Upstream) {
-	for _, m := range c.Match {
-		cl := m.Client.Prefix
-
-		conf := configs[cl]
-		if conf == nil {
-			conf = &proxy.UpstreamConfig{}
-			configs[cl] = conf
-		}
-
-		domain := m.QuestionDomain
-		if domain == "" {
-			conf.Upstreams = append(conf.Upstreams, u)
-
-			continue
-		}
-
-		if conf.DomainReservedUpstreams == nil {
-			conf.DomainReservedUpstreams = map[string][]upstream.Upstream{}
-		}
-		if conf.SpecifiedDomainUpstreams == nil {
-			conf.SpecifiedDomainUpstreams = map[string][]upstream.Upstream{}
-		}
-
-		domain = dns.Fqdn(strings.ToLower(domain))
-		conf.DomainReservedUpstreams[domain] = append(conf.DomainReservedUpstreams[domain], u)
-		conf.SpecifiedDomainUpstreams[domain] = append(conf.SpecifiedDomainUpstreams[domain], u)
+// addPrivateGroup adds the private group into conf.  conf must not be nil.
+func addPrivateGroup(conf *proxy.UpstreamConfig, addr string, opts *upstream.Options) (err error) {
+	u, err := upstream.AddressToUpstream(addr, opts)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return err
 	}
+
+	conf.Upstreams = append(conf.Upstreams, u)
+
+	return nil
+}
+
+// addGroup adds the common group configuration into confs.  confs must not be
+// nil.
+func (c *upstreamGroupConfig) addGroup(confs upstreamConfigs, opts *upstream.Options) (err error) {
+	u, err := upstream.AddressToUpstream(c.Address, opts)
+	if err != nil {
+		// Don't wrap the error, because it's informative enough as is.
+		return err
+	}
+
+	for _, m := range c.Match {
+		pref := m.Client.Prefix
+
+		upsConfs := confs[pref]
+		if upsConfs == nil {
+			upsConfs = map[string]*proxy.UpstreamConfig{}
+			confs[pref] = upsConfs
+		}
+
+		domain := strings.ToLower(m.QuestionDomain)
+		upsConf, ok := upsConfs[domain]
+		if !ok {
+			upsConf = &proxy.UpstreamConfig{}
+			upsConfs[domain] = upsConf
+		}
+
+		upsConf.Upstreams = append(upsConf.Upstreams, u)
+	}
+
+	return nil
 }

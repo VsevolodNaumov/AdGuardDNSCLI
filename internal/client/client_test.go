@@ -107,6 +107,30 @@ func (c *testUpstreamConstructor) AddressToUpstream(
 	return c.onAddressToUpstream(addr, opts)
 }
 
+type testUpstream struct {
+	onAddress  func() (addr string)
+	onClose    func() (err error)
+	onExchange func(req *dns.Msg) (resp *dns.Msg, err error)
+}
+
+// type check
+var _ upstream.Upstream = (*testUpstream)(nil)
+
+// Address implements the [upstream.Upstream] interface for *testUpstream.
+func (u *testUpstream) Address() (addr string) {
+	return u.onAddress()
+}
+
+// Exchange implements the [upstream.Upstream] interface for *testUpstream.
+func (u *testUpstream) Exchange(req *dns.Msg) (_ *dns.Msg, _ error) {
+	return u.onExchange(req)
+}
+
+// Close implements the [upstream.Upstream] interface for *testUpstream.
+func (u *testUpstream) Close() (err error) {
+	return u.onClose()
+}
+
 // comparableUpstream is a mock [upstream.Upstream] implementation for tests.
 type comparableUpstream struct {
 	opts *upstream.Options
@@ -133,7 +157,7 @@ func (u *comparableUpstream) Close() (err error) {
 
 // newComparableUpstreamConstructor returns a new [UpstreamConstructor] that
 // creates upstreams comparable with [assert.Equal].
-func newComparableUpstreamConstructor() (uc client.UpstreamConstructor) {
+func newComparableUpstreamConstructor() (uc *testUpstreamConstructor) {
 	f := func(addr string, opts *upstream.Options) (u upstream.Upstream, err error) {
 		return &comparableUpstream{
 			opts: opts,

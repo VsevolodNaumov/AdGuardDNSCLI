@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"strings"
 
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/dnsproxy/proxy"
@@ -176,7 +177,10 @@ func (svc *DNSService) ServeDNS(
 		return p.Resolve(ctx, dctx)
 	}
 
-	c, ok := svc.clientStorage.ByAddr(ctx, dctx.Addr.Addr())
+	questionDomain := strings.TrimRight(dctx.Req.Question[0].Name, ".")
+	addr := dctx.Addr.Addr()
+
+	c, ok := svc.clientStorage.Get(ctx, addr.Unmap(), strings.ToLower(questionDomain))
 	if ok {
 		dctx.CustomUpstreamConfig = c.Upstreams()
 	}
