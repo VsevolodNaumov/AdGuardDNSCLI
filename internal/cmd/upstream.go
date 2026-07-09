@@ -93,7 +93,7 @@ var predefinedGroups = []agdc.UpstreamGroupName{
 }
 
 // type check
-var _ validate.Interface = (upstreamGroupsConfig)(nil)
+var _ validate.Interface = upstreamGroupsConfig(nil)
 
 // Validate implements the [validate.Interface] interface for
 // upstreamGroupsConfig.
@@ -252,7 +252,7 @@ func (confs upstreamConfigs) initStaticClients(
 ) (clients map[netip.Prefix]client.StaticClientConfig) {
 	clients = make(map[netip.Prefix]client.StaticClientConfig, len(confs))
 
-	for _, pref := range slices.SortedFunc(maps.Keys(confs), (netip.Prefix).Compare) {
+	for _, pref := range slices.SortedFunc(maps.Keys(confs), netip.Prefix.Compare) {
 		for _, domain := range slices.Sorted(maps.Keys(confs[pref])) {
 			conf := confs[pref][domain]
 

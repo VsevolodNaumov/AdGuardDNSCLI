@@ -18,9 +18,7 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 ### Security
 
-- Go version has been updated to prevent the possibility of exploiting the Go vulnerabilities fixed in [1.26.4][go-1.26.4].
-
-[go-1.26.4]: https://groups.google.com/g/golang-announce/c/tKs3rmcBcKw
+- Go version has been updated to prevent the possibility of exploiting the Go vulnerabilities fixed in [1.26.5][go-1.26.5].
 
 ### Fixed
 
@@ -29,6 +27,8 @@ NOTE: Add new changes BELOW THIS COMMENT.
 <!--
 NOTE: Add new changes ABOVE THIS COMMENT.
 -->
+
+[go-1.26.5]: https://groups.google.com/g/golang-announce/c/OrmQE_Yp5Sc
 
 ## [v0.1.1] - 2026-02-12
 
