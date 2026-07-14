@@ -23,6 +23,10 @@ import (
 // unit is a convenience alias for an empty struct.
 type unit = struct{}
 
+// DefaultMaxAutodeviceClients is the default maximum number of dynamic
+// autodevice clients stored for each autodevice rule.
+const DefaultMaxAutodeviceClients = 1024
+
 // DefaultStorageConfig is a configuration structure for [DefaultStorage].
 type DefaultStorageConfig struct {
 	// Logger is used for logging storage operations.  It must not be nil.
@@ -72,6 +76,11 @@ type DefaultStorageConfig struct {
 	// CacheSize is the size of the dynamically created custom upstream cache.
 	// It must be positive if CacheEnabled is true.
 	CacheSize int
+
+	// MaxAutodeviceClients is the maximum number of dynamic clients stored for
+	// each autodevice rule.  If non-positive, [DefaultMaxAutodeviceClients] is
+	// used.
+	MaxAutodeviceClients int
 }
 
 // DefaultStorage is a default implementation of the [Storage] interface.
@@ -113,6 +122,11 @@ type DefaultStorage struct {
 // NewDefaultStorage creates a new properly configured *DefaultStorage.  c must
 // be valid.
 func NewDefaultStorage(c *DefaultStorageConfig) (s *DefaultStorage) {
+	maxAutodeviceClients := c.MaxAutodeviceClients
+	if maxAutodeviceClients <= 0 {
+		maxAutodeviceClients = DefaultMaxAutodeviceClients
+	}
+
 	// Use the number of configured static prefixes as the initial capacity of
 	// the clients slice, as it is a good enough estimate for the initial
 	// capacity.
@@ -145,6 +159,7 @@ func NewDefaultStorage(c *DefaultStorageConfig) (s *DefaultStorage) {
 				domain:       domain,
 				cacheSize:    int(c.CacheSize),
 				cacheEnabled: c.CacheEnabled,
+				maxClients:   maxAutodeviceClients,
 			})
 		}
 	}
@@ -372,6 +387,13 @@ func (d *DefaultStorage) newAutodeviceClient(
 	sac *storedAutodeviceClient,
 	now time.Time,
 ) (cli Client, err error) {
+	sac.mu.Lock()
+	defer sac.mu.Unlock()
+
+	if len(sac.clients) >= sac.maxClients {
+		return nil, fmt.Errorf("too many autodevice clients for %q and %s", sac.domain, sac.prefix)
+	}
+
 	hid, err := d.identify(ctx, logger, addr, now)
 	if err != nil {
 		return nil, fmt.Errorf("identifying client within %s: %w", sac.prefix, err)
@@ -387,9 +409,6 @@ func (d *DefaultStorage) newAutodeviceClient(
 	if err != nil {
 		return nil, fmt.Errorf("creating autodevice for %q and %s: %w", sac.domain, addr, err)
 	}
-
-	sac.mu.Lock()
-	defer sac.mu.Unlock()
 
 	sac.clients[addr] = auto
 

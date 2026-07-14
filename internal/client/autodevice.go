@@ -152,6 +152,7 @@ type storedAutodeviceClient struct {
 	domain       string
 	cacheSize    int
 	cacheEnabled bool
+	maxClients   int
 }
 
 // compare is a method for sorting autodevice configurations by prefix and
