@@ -46,8 +46,6 @@ type RDNSIDSourceConfig struct {
 
 // RDNSIDSource is an [HumanIDSource] that assigns HumanIDs based on the
 // hostname obtained from reverse DNS lookups of IP addresses.
-//
-// TODO(m.kazantsev):  Use.
 type RDNSIDSource struct {
 	ups *proxy.UpstreamConfig
 

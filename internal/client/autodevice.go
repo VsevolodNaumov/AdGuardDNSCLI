@@ -2,9 +2,12 @@ package client
 
 import (
 	"fmt"
+	"io"
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/AdguardTeam/dnsproxy/proxy"
 	"github.com/AdguardTeam/dnsproxy/upstream"
@@ -106,25 +109,27 @@ func (c *AutodeviceUpstreamConfig) toUpstreamConfig(
 
 // autodeviceClient is a dynamic client configuration matched by subnet.
 type autodeviceClient struct {
-	upstreams *proxy.CustomUpstreamConfig
+	upstreams  *proxy.CustomUpstreamConfig
+	validUntil time.Time
 }
 
 // newAutodeviceClient creates a new autodevice client with hid and c.  hid must
 // be valid, c must not be nil.
 func newAutodeviceClient(
-	hid HumanID,
+	hid *ValidHumanID,
 	c *AutodeviceUpstreamConfig,
 	upsCons UpstreamConstructor,
 	cacheEnabled bool,
 	cacheSize int,
 ) (cli *autodeviceClient, err error) {
-	upsConf, err := c.toUpstreamConfig(hid, upsCons)
+	upsConf, err := c.toUpstreamConfig(hid.ID, upsCons)
 	if err != nil {
 		return nil, fmt.Errorf("creating upstream configuration for autodevice client: %w", err)
 	}
 
 	return &autodeviceClient{
-		upstreams: proxy.NewCustomUpstreamConfig(upsConf, cacheEnabled, cacheSize, false),
+		upstreams:  proxy.NewCustomUpstreamConfig(upsConf, cacheEnabled, cacheSize, false),
+		validUntil: hid.Until,
 	}, nil
 }
 
@@ -136,9 +141,12 @@ func (c *autodeviceClient) Upstreams() (uc *proxy.CustomUpstreamConfig) {
 	return c.upstreams
 }
 
-// autodeviceConfig is a complete configuration for an autodevice client under
-// specific IP subnet.
-type autodeviceConfig struct {
+// storedAutodeviceClient represents a set of autodevice client configurations
+// to be stored in the [DefaultStorage].
+type storedAutodeviceClient struct {
+	// mu protects clients.
+	mu           *sync.Mutex
+	clients      map[netip.Addr]*autodeviceClient
 	conf         *AutodeviceUpstreamConfig
 	prefix       netip.Prefix
 	domain       string
@@ -149,7 +157,7 @@ type autodeviceConfig struct {
 // compare is a method for sorting autodevice configurations by prefix and
 // domain.  Empty prefix is sorted last, so that it is only used if no other
 // configuration matches.  other must not be nil.
-func (c *autodeviceConfig) compare(other *autodeviceConfig) (res int) {
+func (c *storedAutodeviceClient) compare(other *storedAutodeviceClient) (res int) {
 	switch {
 	case c.prefix == (netip.Prefix{}):
 		if other.prefix == (netip.Prefix{}) {
@@ -173,7 +181,9 @@ func (c *autodeviceConfig) compare(other *autodeviceConfig) (res int) {
 
 // matches returns true if c matches addr and domain pair.  addr must be valid,
 // domain, if not empty, must be a valid non-FQDN.
-func (c *autodeviceConfig) matches(addr netip.Addr, domain string) (ok bool) {
+//
+// TODO(e.burkov):  DRY with [storedClient.matches].
+func (c *storedAutodeviceClient) matches(addr netip.Addr, domain string) (ok bool) {
 	if c.prefix != (netip.Prefix{}) && !c.prefix.Contains(addr) {
 		return false
 	}
@@ -183,4 +193,24 @@ func (c *autodeviceConfig) matches(addr netip.Addr, domain string) (ok bool) {
 	}
 
 	return true
+}
+
+// type check
+var _ io.Closer = (*storedAutodeviceClient)(nil)
+
+// Close implements the [io.Closer] interface for *storedAutodeviceClient.
+func (c *storedAutodeviceClient) Close() (err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var errs []error
+
+	for addr, cli := range c.clients {
+		err = cli.upstreams.Close()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("closing upstreams for %s: %w", addr, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }

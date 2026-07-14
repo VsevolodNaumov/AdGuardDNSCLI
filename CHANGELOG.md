@@ -20,15 +20,58 @@ NOTE: Add new changes BELOW THIS COMMENT.
 
 - Go version has been updated to prevent the possibility of exploiting the Go vulnerabilities fixed in [1.26.5][go-1.26.5].
 
+### Added
+
+- Support for automatic device identification and building device-specific upstream servers, see the [Knowledge Base][kb-autodevice].
+
+### Changed
+
+#### Configuration changes
+
+In this release, the schema version has changed from 3 to 4.
+
+- The new object `autodevice` has been added to each of `dns.upstream.groups.*` objects.
+
+    ```yaml
+    # Before:
+    dns:
+        upstream:
+            groups:
+                'default':
+                    # …
+                # …
+            # …
+        # …
+    # …
+    schema_version: 3
+
+    # After:
+    dns:
+        upstream:
+            groups:
+                'default':
+                    # …
+                    autodevice:
+                        enabled: false
+                # …
+            # …
+        # …
+    # …
+    schema_version: 4
+    ```
+
+To rollback this change, remove every `dns.upstream.groups.*.autodevice` object and set the `schema_version` to `3`.
+
 ### Fixed
 
 - Status reported by the launchd service implementation in cases of scheduled service restart.
 
+[go-1.26.5]:     https://groups.google.com/g/golang-announce/c/OrmQE_Yp5Sc
+[kb-autodevice]: https://adguard-dns.io/kb/dns-client/configuration/#dns-upstream
+
 <!--
 NOTE: Add new changes ABOVE THIS COMMENT.
 -->
-
-[go-1.26.5]: https://groups.google.com/g/golang-announce/c/OrmQE_Yp5Sc
 
 ## [v0.1.1] - 2026-02-12
 

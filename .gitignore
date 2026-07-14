@@ -15,9 +15,9 @@
 *.out
 *.test
 /bin/
+/config.yaml
 /dist/
 /test-reports/
 adguarddns-cli
 adguarddns-cli.exe
-config.yaml
 backup-*.dir

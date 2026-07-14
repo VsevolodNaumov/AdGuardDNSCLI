@@ -106,6 +106,11 @@ func NewProfileID(s string) (id ProfileID, err error) {
 		}
 	}
 
+	err = netutil.ValidateHostnameLabel(s)
+	if err != nil {
+		return "", fmt.Errorf("bad profile id %q: %w", s, err)
+	}
+
 	return ProfileID(s), nil
 }
 

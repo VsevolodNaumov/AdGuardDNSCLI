@@ -9,7 +9,7 @@ import (
 	"github.com/AdguardTeam/golibs/timeutil"
 )
 
-// migrateToV2 migrates the configuration from version 1 to version 2.  It adds
+// migrateTo2 migrates the configuration from version 1 to version 2.  It adds
 // the bind_retry object to the dns.server section:
 //
 // # Before:
@@ -36,13 +36,7 @@ import (
 func (m *Migrator) migrateTo2(ctx context.Context, conf yObj) (err error) {
 	const target SchemaVersion = 2
 
-	dnsVal, err := fieldVal[yObj](conf, "dns")
-	if err != nil {
-		// Don't wrap the error since it's informative enough as is.
-		return err
-	}
-
-	serverVal, err := fieldVal[yObj](dnsVal, "server")
+	serverVal, err := fieldChainVal[yObj](conf, "dns", "server")
 	if err != nil {
 		// Don't wrap the error since it's informative enough as is.
 		return err
@@ -52,8 +46,7 @@ func (m *Migrator) migrateTo2(ctx context.Context, conf yObj) (err error) {
 
 	_, ok := serverVal[key]
 	if ok {
-		// TODO(e.burkov):  Add errors.ErrNotNil.
-		return fmt.Errorf("%s: %w", key, errors.ErrNotEmpty)
+		return fmt.Errorf("%s: %w", key, errors.ErrUnexpectedValue)
 	}
 
 	serverVal[key] = yObj{

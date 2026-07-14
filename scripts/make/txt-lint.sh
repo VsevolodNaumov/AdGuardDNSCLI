@@ -106,6 +106,9 @@ readonly go
 "$go" tool yamlfmt \
 	--lint \
 	./*.yaml \
+	./.github/*/*.yaml \
+	./bamboo-specs/*.yaml \
+	./internal/configmigrate/testdata/TestMigrator_Run_success/*/*.yaml \
 	;
 
 find_with_ignore \

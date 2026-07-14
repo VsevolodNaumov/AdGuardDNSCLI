@@ -13,43 +13,43 @@ func TestAutodeviceConfig_Compare(t *testing.T) {
 	t.Parallel()
 
 	var (
-		confNarrow  = &autodeviceConfig{prefix: netip.MustParsePrefix("192.0.2.0/31")}
-		confMedium  = &autodeviceConfig{prefix: netip.MustParsePrefix("192.0.2.127/30")}
-		confWide    = &autodeviceConfig{prefix: netip.MustParsePrefix("192.0.4.0/24")}
-		confGeneral = &autodeviceConfig{prefix: netip.Prefix{}}
+		confNarrow  = &storedAutodeviceClient{prefix: netip.MustParsePrefix("192.0.2.0/31")}
+		confMedium  = &storedAutodeviceClient{prefix: netip.MustParsePrefix("192.0.2.127/30")}
+		confWide    = &storedAutodeviceClient{prefix: netip.MustParsePrefix("192.0.4.0/24")}
+		confGeneral = &storedAutodeviceClient{prefix: netip.Prefix{}}
 	)
 
 	testCases := []struct {
 		name string
-		in   []*autodeviceConfig
-		want []*autodeviceConfig
+		in   []*storedAutodeviceClient
+		want []*storedAutodeviceClient
 	}{{
 		name: "valid_only",
-		in:   []*autodeviceConfig{confMedium, confNarrow, confWide},
-		want: []*autodeviceConfig{confNarrow, confMedium, confWide},
+		in:   []*storedAutodeviceClient{confMedium, confNarrow, confWide},
+		want: []*storedAutodeviceClient{confNarrow, confMedium, confWide},
 	}, {
 		name: "with_empty",
-		in:   []*autodeviceConfig{confGeneral, confMedium, confNarrow, confWide},
-		want: []*autodeviceConfig{confNarrow, confMedium, confWide, confGeneral},
+		in:   []*storedAutodeviceClient{confGeneral, confMedium, confNarrow, confWide},
+		want: []*storedAutodeviceClient{confNarrow, confMedium, confWide, confGeneral},
 	}, {
 		name: "several_empty",
-		in:   []*autodeviceConfig{confGeneral, confWide, confMedium, confNarrow, confGeneral},
-		want: []*autodeviceConfig{confNarrow, confMedium, confWide, confGeneral, confGeneral},
+		in:   []*storedAutodeviceClient{confGeneral, confWide, confMedium, confNarrow, confGeneral},
+		want: []*storedAutodeviceClient{confNarrow, confMedium, confWide, confGeneral, confGeneral},
 	}, {
 		name: "empty_only",
-		in:   []*autodeviceConfig{confGeneral, confGeneral},
-		want: []*autodeviceConfig{confGeneral, confGeneral},
+		in:   []*storedAutodeviceClient{confGeneral, confGeneral},
+		want: []*storedAutodeviceClient{confGeneral, confGeneral},
 	}, {
 		name: "empty_at_end",
-		in:   []*autodeviceConfig{confNarrow, confMedium, confWide, confGeneral},
-		want: []*autodeviceConfig{confNarrow, confMedium, confWide, confGeneral},
+		in:   []*storedAutodeviceClient{confNarrow, confMedium, confWide, confGeneral},
+		want: []*storedAutodeviceClient{confNarrow, confMedium, confWide, confGeneral},
 	}}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			slices.SortStableFunc(tc.in, (*autodeviceConfig).compare)
+			slices.SortStableFunc(tc.in, (*storedAutodeviceClient).compare)
 			assert.Equal(t, tc.want, tc.in)
 		})
 	}

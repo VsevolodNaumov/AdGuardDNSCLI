@@ -30,18 +30,17 @@ const (
 	// testTLD is a common TLD for domains in tests.
 	testTLD = "example"
 
-	// testQuestionDomain is a common question domain for tests.
-	testQuestionDomain = "question." + testTLD
+	// testDomainCommon is a common question domain for tests.
+	testDomainCommon = "question." + testTLD
 
-	// testQuestionSubdomain is a common subdomain of testQuestionDomain for
-	// tests.
-	testQuestionSubdomain = "www." + testQuestionDomain
+	// testDomainSub is a common subdomain of testQuestionDomain for tests.
+	testDomainSub = "www." + testDomainCommon
 
-	// testOtherDomain is another common question domain for tests.
-	testOtherDomain = "other." + testTLD
+	// testDomainOther is another common question domain for tests.
+	testDomainOther = "other." + testTLD
 
-	// testUnmatchedDomain is a common unmatched question domain for tests.
-	testUnmatchedDomain = "unmatched.test"
+	// testDomainUnmatched is a common unmatched question domain for tests.
+	testDomainUnmatched = "unmatched.test"
 )
 
 // testAutodeviceUpstreamConfig is a common autodevice upstream configuration
@@ -62,28 +61,28 @@ func TestDefaultStorage_Get_static(t *testing.T) {
 	t.Parallel()
 
 	const (
-		anotherUpstreamURL = "tls://dns.example/dns-query"
-		domainUpstreamURL  = "quic://dns.example"
+		upstreamURLAnother = "tls://dns.example/dns-query"
+		upstreamURLDomain  = "quic://dns.example"
 	)
 
-	cli1Addr1 := netip.MustParseAddr("192.0.2.0")
-	cli1Pref1 := netip.PrefixFrom(cli1Addr1, 31)
+	addr1Cli1 := netip.MustParseAddr("192.0.2.0")
+	pref1Cli1 := netip.PrefixFrom(addr1Cli1, 31)
 
-	cli1Addr2 := netip.MustParseAddr("192.0.2.4")
-	cli1Pref2 := netip.PrefixFrom(cli1Addr2, 30)
+	addr2Cli1 := netip.MustParseAddr("192.0.2.4")
+	pref2Cli1 := netip.PrefixFrom(addr2Cli1, 30)
 
-	cli2Addr1 := netip.MustParseAddr("198.51.100.0")
-	cli2Pref1 := netip.PrefixFrom(cli2Addr1, 32)
+	addr1Cli2 := netip.MustParseAddr("198.51.100.0")
+	pref1Cli2 := netip.PrefixFrom(addr1Cli2, 32)
 
-	absentAddr := cli2Addr1.Next()
+	addrAbsent := addr1Cli2.Next()
 
 	custUpsConf1 := newTestStaticClientConf(t, testUpstreamURL)
 	cli1 := client.NewStaticClient(custUpsConf1)
 
-	custUpsConf2 := newTestStaticClientConf(t, anotherUpstreamURL)
+	custUpsConf2 := newTestStaticClientConf(t, upstreamURLAnother)
 	cli2 := client.NewStaticClient(custUpsConf2)
 
-	custUpsConf3 := newTestStaticClientConf(t, domainUpstreamURL)
+	custUpsConf3 := newTestStaticClientConf(t, upstreamURLDomain)
 	cli3 := client.NewStaticClient(custUpsConf3)
 
 	testCases := []struct {
@@ -94,82 +93,82 @@ func TestDefaultStorage_Get_static(t *testing.T) {
 		name:   "empty",
 		static: nil,
 		searches: []testSearch{{
-			addr:   absentAddr,
-			domain: testQuestionDomain,
+			addr:   addrAbsent,
+			domain: testDomainCommon,
 			want:   nil,
 		}, {
-			addr:   cli1Addr2.Prev(),
-			domain: testQuestionDomain,
+			addr:   addr2Cli1.Prev(),
+			domain: testDomainCommon,
 			want:   nil,
 		}},
 	}, {
 		name: "single",
 		static: map[netip.Prefix]client.StaticClientConfig{
-			cli1Pref1: {
-				"":                 cli1,
-				"example":          cli2,
-				testQuestionDomain: cli3,
+			pref1Cli1: {
+				"":               cli1,
+				"example":        cli2,
+				testDomainCommon: cli3,
 			},
-			cli1Pref2: {"": cli1},
+			pref2Cli1: {"": cli1},
 		},
 		searches: []testSearch{{
-			addr:   cli1Addr1,
-			domain: testQuestionDomain,
+			addr:   addr1Cli1,
+			domain: testDomainCommon,
 			want:   custUpsConf3,
 		}, {
-			addr:   cli1Addr1,
-			domain: testQuestionSubdomain,
+			addr:   addr1Cli1,
+			domain: testDomainSub,
 			want:   custUpsConf3,
 		}, {
-			addr:   cli1Addr1,
-			domain: testOtherDomain,
+			addr:   addr1Cli1,
+			domain: testDomainOther,
 			want:   custUpsConf2,
 		}, {
-			addr:   cli1Addr1,
-			domain: testUnmatchedDomain,
+			addr:   addr1Cli1,
+			domain: testDomainUnmatched,
 			want:   custUpsConf1,
 		}, {
-			addr:   cli1Addr2,
-			domain: testQuestionDomain,
+			addr:   addr2Cli1,
+			domain: testDomainCommon,
 			want:   custUpsConf1,
 		}, {
-			addr:   cli2Addr1.Next(),
-			domain: testQuestionDomain,
+			addr:   addr1Cli2.Next(),
+			domain: testDomainCommon,
 			want:   nil,
 		}, {
-			addr:   absentAddr,
-			domain: testQuestionDomain,
+			addr:   addrAbsent,
+			domain: testDomainCommon,
 			want:   nil,
 		}},
 	}, {
 		name: "multiple",
 		static: map[netip.Prefix]client.StaticClientConfig{
-			cli1Pref1: {
-				"":                 cli1,
-				testQuestionDomain: cli3,
+			pref1Cli1: {
+				"":               cli1,
+				testDomainCommon: cli3,
 			},
-			cli1Pref2: {"": cli1},
-			cli2Pref1: {"": cli2},
+			pref2Cli1: {"": cli1},
+			pref1Cli2: {"": cli2},
 		},
 		searches: []testSearch{{
-			addr:   cli1Addr1,
-			domain: testQuestionDomain,
+			addr:   addr1Cli1,
+			domain: testDomainCommon,
 			want:   custUpsConf3,
 		}, {
-			addr:   cli1Addr1,
-			domain: testQuestionSubdomain,
+			addr:   addr1Cli1,
+			domain: testDomainSub,
 			want:   custUpsConf3,
 		}, {
-			addr:   cli1Addr2,
-			domain: testQuestionDomain,
+			addr:   addr2Cli1,
+			domain: testDomainCommon,
 			want:   custUpsConf1,
 		}, {
-			addr:   cli2Addr1,
-			domain: testQuestionDomain,
+			addr:   addr1Cli2,
+			domain: testDomainCommon,
 			want:   custUpsConf2,
 		}, {
-			addr:   absentAddr,
-			domain: testQuestionDomain,
+			addr:   addrAbsent,
+			domain: testDomainCommon,
 			want:   nil,
 		}},
 	}}
@@ -199,6 +198,7 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 
 	addrSpecific := testIPv4
 	prefSpecific := netip.PrefixFrom(addrSpecific, addrSpecific.BitLen())
+
 	addrDefault := netip.MustParseAddr("198.51.100.7")
 
 	source := &testHumanIDSource{
@@ -215,9 +215,9 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 	idSpecific := errors.Must(source.Identify(t.Context(), addrSpecific)).ID
 	idDefault := errors.Must(source.Identify(t.Context(), addrDefault)).ID
 
-	upsConf := testAutodeviceUpstreamConfig
-
 	upsCons := newComparableUpstreamConstructor()
+
+	upsConf := testAutodeviceUpstreamConfig
 
 	extIDSpecific := fmt.Sprintf("%s-%s-%s", upsConf.DeviceType, upsConf.ProfileID, idSpecific)
 	upsURLSpecific := upsConf.UpstreamTemplate.JoinPath(extIDSpecific).String()
@@ -248,11 +248,11 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 		},
 		searches: []testSearch{{
 			addr:   addrDefault,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   custConfDefault,
 		}, {
 			addr:   addrSpecific,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   custConfSpecific,
 		}},
 	}, {
@@ -263,11 +263,11 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 		},
 		searches: []testSearch{{
 			addr:   addrSpecific,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   custConfSpecific,
 		}, {
 			addr:   addrDefault,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   custConfDefault,
 		}},
 	}, {
@@ -277,11 +277,11 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 		},
 		searches: []testSearch{{
 			addr:   addrDefault,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   nil,
 		}, {
 			addr:   addrSpecific,
-			domain: testQuestionDomain,
+			domain: testDomainCommon,
 			want:   custConfSpecific,
 		}},
 	}}
@@ -340,7 +340,7 @@ func TestDefaultStorage_Get_autodeviceCache(t *testing.T) {
 	require.True(t, t.Run("first", func(t *testing.T) {
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
 
-		first, ok = cs.Get(ctx, testIPv4, testQuestionDomain)
+		first, ok = cs.Get(ctx, testIPv4, testDomainCommon)
 		require.True(t, ok)
 
 		assert.NotNil(t, first)
@@ -350,7 +350,7 @@ func TestDefaultStorage_Get_autodeviceCache(t *testing.T) {
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
 
 		var cached client.Client
-		cached, ok = cs.Get(ctx, testIPv4, testQuestionDomain)
+		cached, ok = cs.Get(ctx, testIPv4, testDomainCommon)
 		require.True(t, ok)
 
 		assert.Same(t, first, cached)
@@ -364,7 +364,7 @@ func TestDefaultStorage_Get_autodeviceCache(t *testing.T) {
 	require.True(t, t.Run("expire", func(t *testing.T) {
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
 
-		refreshed, ok = cs.Get(ctx, testIPv4, testQuestionDomain)
+		refreshed, ok = cs.Get(ctx, testIPv4, testDomainCommon)
 		require.True(t, ok)
 
 		assert.NotSame(t, first, refreshed)
@@ -374,7 +374,7 @@ func TestDefaultStorage_Get_autodeviceCache(t *testing.T) {
 		ctx := testutil.ContextWithTimeout(t, testTimeout)
 
 		var latest client.Client
-		latest, ok = cs.Get(ctx, testIPv4, testQuestionDomain)
+		latest, ok = cs.Get(ctx, testIPv4, testDomainCommon)
 		require.True(t, ok)
 
 		assert.Same(t, refreshed, latest)
@@ -434,7 +434,7 @@ func TestDefaultStorage_SetFinalizer(t *testing.T) {
 		addr := testIPv4
 
 		for range clientsCount {
-			client, ok := storage.Get(t.Context(), addr, testQuestionDomain)
+			client, ok := storage.Get(t.Context(), addr, testDomainCommon)
 			require.True(t, ok)
 
 			assert.NotNil(t, client)

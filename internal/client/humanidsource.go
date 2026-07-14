@@ -48,13 +48,11 @@ type DefaultHumanIDSourceConfig struct {
 	Clock timeutil.Clock
 
 	// ValidityIvl is a time interval of validity.
-	ValidityIvl timeutil.Duration
+	ValidityIvl time.Duration
 }
 
 // DefaultHumanIDSource is a simple [HumanIDSource] that generates a HumanID
 // based solely on the given address.
-//
-// TODO(m.kazantsev):  Use.
 type DefaultHumanIDSource struct {
 	clock       timeutil.Clock
 	validityIvl time.Duration
@@ -65,7 +63,7 @@ type DefaultHumanIDSource struct {
 func NewDefaultHumanIDSource(conf *DefaultHumanIDSourceConfig) (hs *DefaultHumanIDSource) {
 	return &DefaultHumanIDSource{
 		clock:       conf.Clock,
-		validityIvl: time.Duration(conf.ValidityIvl),
+		validityIvl: conf.ValidityIvl,
 	}
 }
 

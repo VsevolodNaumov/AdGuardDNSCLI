@@ -9,7 +9,6 @@ import (
 	"github.com/AdguardTeam/AdGuardDNSCLI/internal/client"
 	"github.com/AdguardTeam/golibs/errors"
 	"github.com/AdguardTeam/golibs/testutil"
-	"github.com/AdguardTeam/golibs/timeutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,7 +25,7 @@ func TestDefaultHumanIDSource_Identify(t *testing.T) {
 
 	src := client.NewDefaultHumanIDSource(&client.DefaultHumanIDSourceConfig{
 		Clock:       clock,
-		ValidityIvl: timeutil.Duration(testValidUntilIvl),
+		ValidityIvl: testValidUntilIvl,
 	})
 
 	testCases := []struct {
@@ -83,7 +82,7 @@ func TestConsequentIDSource_Identify(t *testing.T) {
 	clock, _ := newTestClock(t, &now)
 	srcConf := &client.DefaultHumanIDSourceConfig{
 		Clock:       clock,
-		ValidityIvl: timeutil.Duration(testValidUntilIvl),
+		ValidityIvl: testValidUntilIvl,
 	}
 
 	noValueErrMsg := errors.ErrNoValue.Error()

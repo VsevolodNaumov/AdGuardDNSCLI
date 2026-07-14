@@ -122,6 +122,7 @@ func (m *Migrator) migrate(ctx context.Context, conf yObj, curr, targ SchemaVers
 		0: nil,
 		1: m.migrateTo2,
 		2: m.migrateTo3,
+		3: m.migrateTo4,
 	}
 
 	for i, migrate := range migrations[curr:targ] {
