@@ -307,6 +307,47 @@ func TestDefaultStorage_Get_autodevice(t *testing.T) {
 	}
 }
 
+func TestDefaultStorage_Get_autodeviceMaxClients(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	source := &testHumanIDSource{
+		onIdentify: func(_ context.Context, addr netip.Addr) (id *client.ValidHumanID, err error) {
+			return &client.ValidHumanID{
+				ID:    client.HumanID(hex.EncodeToString(addr.AsSlice())),
+				Until: now.Add(testValidUntilIvl),
+			}, nil
+		},
+	}
+
+	cs := client.NewDefaultStorage(&client.DefaultStorageConfig{
+		Logger:              testLogger,
+		Clock:               timeutil.SystemClock{},
+		HumanIDSource:       source,
+		UpstreamConstructor: client.DefaultUpstreamConstructor{},
+		Identifiable:        netutil.SubnetSetFunc(client.IsIdentifiable),
+		Autodevice: map[netip.Prefix]client.AutodeviceClientConfig{
+			{}: testAutodeviceClientConfig,
+		},
+		CleanupIvl:           10 * testTimeout,
+		MaxAutodeviceClients: 1,
+	})
+	servicetest.RequireRun(t, cs, testTimeout)
+
+	ctx := testutil.ContextWithTimeout(t, testTimeout)
+	first, ok := cs.Get(ctx, netip.MustParseAddr("192.0.2.1"), testDomainCommon)
+	require.True(t, ok)
+	require.NotNil(t, first)
+
+	cached, ok := cs.Get(ctx, netip.MustParseAddr("192.0.2.1"), testDomainCommon)
+	require.True(t, ok)
+	assert.Same(t, first, cached)
+
+	second, ok := cs.Get(ctx, netip.MustParseAddr("192.0.2.2"), testDomainCommon)
+	require.False(t, ok)
+	assert.Nil(t, second)
+}
+
 func TestDefaultStorage_Get_autodeviceCache(t *testing.T) {
 	t.Parallel()
 

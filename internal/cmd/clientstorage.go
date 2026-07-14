@@ -67,8 +67,9 @@ func newClientStorage(
 		Identifiable: netutil.SubnetSetFunc(client.IsIdentifiable),
 		CleanupIvl:   defaultClientCleanupIvl,
 		// #nosec G115 -- The value is validated to not exceed [math.MaxInt].
-		CacheSize:    int(cacheConf.ClientSize),
-		CacheEnabled: cacheConf.Enabled,
+		CacheSize:            int(cacheConf.ClientSize),
+		CacheEnabled:         cacheConf.Enabled,
+		MaxAutodeviceClients: client.DefaultMaxAutodeviceClients,
 	}
 
 	return client.NewDefaultStorage(clientStrgConf)
